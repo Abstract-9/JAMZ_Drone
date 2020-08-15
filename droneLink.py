@@ -1,4 +1,4 @@
-from dronekit import connect, VehicleMode
+from dronekit import connect, VehicleMode, LocationGlobalRelative
 import dronekit_sitl
 import time
 
@@ -9,19 +9,18 @@ class DroneLink:
     LOITER_ALTITUDE = 15
 
     def get_status(self):
-        print("Get some self.drone attribute values:")
-        print(" GPS: %s" % self.drone.gps_0)
-        print(" Battery: %s" % self.drone.battery)
-        print(" Last Heartbeat: %s" % self.drone.last_heartbeat)
-        print(" Is Armable?: %s" % self.drone.is_armable)
-        print(" System status: %s" % self.drone.system_status.state)
-        print(" Mode: %s" % self.drone.mode.name)  # settable
-        print(" Altitude: %s" % self.drone.location.global_relative_frame.alt)
+        return {
+                "GPS": self.drone.gps_0,
+                "Battery": self.drone.battery,
+                "Last Heartbeat": self.drone.last_heartbeat,
+                "Armable": self.drone.is_armable,
+                "Status": self.drone.system_status.state,
+                "Mode": self.drone.mode,
+                "Altitude": self.drone.location.global_relative_frame.alt
+                }
 
     def close_connection(self):
         self.drone.close()
-        if self.testing:
-            self.sitl.stop()
 
     def arm(self):
         while not self.drone.is_armable:
@@ -33,10 +32,22 @@ class DroneLink:
             self.drone.mode = "GUIDED"
             time.sleep(1)
         self.drone.armed = True
-        while not self.drone.mode.name == "STABILIZE" and not self.drone.armed:
+        while not self.drone.armed:
             print("Arming motors... Vehicle Mode: ")
             time.sleep(1)
         print("Armed!")
+
+    def disarm(self):
+        self.drone.mode = VehicleMode("STABILIZE")
+        while not self.drone.mode.name == "STABILIZE":
+            print("Changing to STABILIZE...")
+            self.drone.mode = "STABILIZE"
+            time.sleep(1)
+        self.drone.armed = False
+        while self.drone.armed:
+            print("Disarming motors... Vehicle Mode: ")
+            time.sleep(1)
+        print("Disarmed!")
 
     def get_home_location(self):
         while not self.drone.home_location:
@@ -51,7 +62,6 @@ class DroneLink:
         # Can't take off without arming
         if not self.drone.armed:
             self.arm()
-        # Can't take off without being in GUIDED mode
         # Ready to go!
         print("Taking off!")
         self.drone.simple_takeoff(altitude)  # Take off
@@ -63,6 +73,17 @@ class DroneLink:
                 break
             time.sleep(1)
 
+    def go_to(self, coordinates, airspeed):
+        self.drone.simple_goto(LocationGlobalRelative(coordinates[0], coordinates[1], 50), airspeed=airspeed)
+        time.sleep(30)
+
+    def land(self):
+        self.drone.mode = VehicleMode("LAND")
+        while self.drone.location.global_relative_frame.alt > 0.5:
+            print("Landing...")
+            time.sleep(1)
+        print("Touchdown!")
+
     def return_home(self):
         self.drone.mode = VehicleMode("RTL")
         while not self.drone.mode.name == "RTL":
@@ -71,20 +92,28 @@ class DroneLink:
             time.sleep(1)
         print("Returning home :)")
 
-    def get_altitude(self):
-        return self.drone.location.global_relative_frame.alt
+    def get_location(self):
+        return {
+            "lat": self.drone.location.global_relative_frame.lat,
+            "lon": self.drone.location.global_relative_frame.lon,
+            "alt": self.drone.location.global_relative_frame.alt
+            }
 
-    def __init__(self, device, testing=False):
-        if testing:
-            self.testing = True
-            self.sitl = dronekit_sitl.start_default()
-            self.drone = connect(self.sitl.connection_string(), wait_ready=True)
-            print("Drone connected on SITL")
-        else:
-            self.testing = False
-            self.drone = connect(device)
-            print("Drone connected!")
+    def __init__(self, device):
+        self.drone = connect(device)
+        print("Drone connected!")
+        self.drone.wait_ready()
         cmds = self.drone.commands
         cmds.download()
         cmds.wait_ready()
-        print("Ready to go! Home location: %s" % self.drone.home_location)
+        self.home_location = self.drone.home_location
+        print("Ready to go! Home location: %s" % self.home_location)
+
+
+        @self.drone.on_message("HEARTBEAT")
+        def on_heartbeat(drone, name, msg):
+            print("LAT: %f" % drone.location.global_relative_frame.lat)
+            print("LNG: %f" % drone.location.global_relative_frame.lon)
+            print("ALT: %f" % drone.location.global_relative_frame.alt)
+            print("STATUS: %s | MODE: %s" % (drone.system_status.state, self.drone.mode))
+            print("AIRSPEED: %d" % drone.airspeed)
