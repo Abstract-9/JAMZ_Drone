@@ -2,10 +2,14 @@ from flask import Flask, request
 from argparse import ArgumentParser
 from droneLink import DroneLink
 
+import requests
+import time
+
 parser = ArgumentParser(description=__doc__)
 
 parser.add_argument("--device", required=True, help="mavlink device connection")
 parser.add_argument("--baudrate", type=int, help="master port baud rate", default=115200)
+parser.add_argument("--home", required=False, default="http://loganrodie.me:4000", help="Brain url")
 args = parser.parse_args()
 
 app = Flask(__name__)
@@ -43,8 +47,22 @@ def location():
     return drone.get_location()
 
 
+def call_home():
+    try:
+        response = requests.get(args.home + "/drones/initialize")
+    except requests.exceptions.Timeout as e:
+        print("Home isn't responding. I won't function without home :(")
+        return False
+    if response.json()['id']:
+        return response.json()['id']
+
+
 if __name__ == '__main__':
     print(drone.get_status())
+    drone_id = call_home()
+    while not drone_id:
+        time.sleep(5)
+        drone_id = call_home()
     app.run()
 
 

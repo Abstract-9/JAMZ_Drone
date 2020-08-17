@@ -97,11 +97,12 @@ class DroneLink:
             "lat": self.drone.location.global_relative_frame.lat,
             "lon": self.drone.location.global_relative_frame.lon,
             "alt": self.drone.location.global_relative_frame.alt
-            }
+        }
 
-    def __init__(self, device):
+    def __init__(self, device, drone_id):
         self.drone = connect(device)
         print("Drone connected!")
+        self.drone_id = drone_id
         self.drone.wait_ready()
         cmds = self.drone.commands
         cmds.download()
