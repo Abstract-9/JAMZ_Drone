@@ -14,7 +14,7 @@ args = parser.parse_args()
 
 app = Flask(__name__)
 
-drone = DroneLink(args.device)
+drone = None
 
 
 @app.route('/test_ascend', methods=['POST'])
@@ -50,7 +50,7 @@ def location():
 def call_home():
     try:
         response = requests.get(args.home + "/drones/initialize")
-    except requests.exceptions.Timeout as e:
+    except Exception as e:
         print("Home isn't responding. I won't function without home :(")
         return False
     if response.json()['id']:
@@ -58,11 +58,12 @@ def call_home():
 
 
 if __name__ == '__main__':
-    print(drone.get_status())
     drone_id = call_home()
     while not drone_id:
         time.sleep(5)
         drone_id = call_home()
+    drone = DroneLink(args.device, drone_id)
+    print(drone.get_status())
     app.run()
 
 
