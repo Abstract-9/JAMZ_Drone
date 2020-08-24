@@ -1,11 +1,15 @@
 from dronekit import connect, VehicleMode, LocationGlobalRelative
 import time
+import asyncio
+import requests
 
 
 class DroneLink:
     drone = None
-    # Define drone loiter altitude. It'll be much higher in prod
-    LOITER_ALTITUDE = 15
+    # Define drone default altitude. It'll be much higher in prod
+    DEFAULT_ALTITUDE = 15
+    # Define the amount of time that the drone can continue its mission without talking to the controller.
+    NETWORK_TIMEOUT = 60 # 60 seconds
 
     def get_status(self):
         return {
@@ -98,10 +102,30 @@ class DroneLink:
             "alt": self.drone.location.global_relative_frame.alt
         }
 
-    def __init__(self, device, drone_id):
+    async def send_keep_alive(self):
+        try:
+            response = requests.get(self.controller + "/drones/heartbeat/" + self.drone_id)
+        except Exception as e:
+            print("uh oh, can't reach home. Keep flying for now...")
+            self.time_without_network += 5
+            if self.time_without_network == self.NETWORK_TIMEOUT:
+                print("network timeout reached. Returning home.")
+                self.return_home()
+            return
+        if response.status_code == 505:
+            # 505 means we need to change our ID. This should almost never happen
+            self.drone_id = response.json()['id']
+
+    def __init__(self, device, drone_id, home):
         self.drone = connect(device)
         print("Drone connected!")
+        # Variables for talking to the controller
         self.drone_id = drone_id
+        self.controller = home
+        # Variables for controlling network timeout
+        self.heartbeat_counter = 0
+        self.time_without_network = 0
+        # Wait for flight controller to be ready
         self.drone.wait_ready()
         cmds = self.drone.commands
         cmds.download()
@@ -117,3 +141,7 @@ class DroneLink:
             print("ALT: %f" % drone.location.global_relative_frame.alt)
             print("STATUS: %s | MODE: %s" % (drone.system_status.state, self.drone.mode))
             print("AIRSPEED: %d" % drone.airspeed)
+            self.heartbeat_counter += 1
+            if self.heartbeat_counter == 5:
+                asyncio.create_task(self.send_keep_alive())
+                self.heartbeat_counter = 0

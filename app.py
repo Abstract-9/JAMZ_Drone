@@ -62,7 +62,7 @@ if __name__ == '__main__':
     while not drone_id:
         time.sleep(5)
         drone_id = call_home()
-    drone = DroneLink(args.device, drone_id)
+    drone = DroneLink(args.device, drone_id, args.home)
     print(drone.get_status())
     app.run()
 
