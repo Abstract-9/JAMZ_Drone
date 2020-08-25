@@ -9,7 +9,7 @@ class DroneLink:
     # Define drone default altitude. It'll be much higher in prod
     DEFAULT_ALTITUDE = 15
     # Define the amount of time that the drone can continue its mission without talking to the controller.
-    NETWORK_TIMEOUT = 60  # 60 seconds
+    NETWORK_TIMEOUT = 120  # 120 seconds
 
     def get_status(self):
         return {
@@ -102,9 +102,9 @@ class DroneLink:
             "alt": self.drone.location.global_relative_frame.alt
         }
 
-    async def send_keep_alive(self):
+    async def send_heartbeat(self):
         try:
-            response = requests.get(self.controller + "/drones/heartbeat/" + self.drone_id)
+            response = requests.get("%s/drones/%d/heartbeat" % (self.controller, self.drone_id))
         except Exception as e:
             print("uh oh, can't reach home. Keep flying for now...")
             self.time_without_network += 5
@@ -143,5 +143,5 @@ class DroneLink:
             print("AIRSPEED: %d" % drone.airspeed)
             self.heartbeat_counter += 1
             if self.heartbeat_counter == 5:
-                asyncio.create_task(self.send_keep_alive())
+                asyncio.create_task(self.send_heartbeat())
                 self.heartbeat_counter = 0
