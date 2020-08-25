@@ -9,7 +9,7 @@ class DroneLink:
     # Define drone default altitude. It'll be much higher in prod
     DEFAULT_ALTITUDE = 15
     # Define the amount of time that the drone can continue its mission without talking to the controller.
-    NETWORK_TIMEOUT = 60 # 60 seconds
+    NETWORK_TIMEOUT = 60  # 60 seconds
 
     def get_status(self):
         return {
