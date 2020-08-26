@@ -104,7 +104,12 @@ class DroneLink:
 
     async def send_heartbeat(self):
         try:
-            response = requests.get("%s/drones/%d/heartbeat" % (self.controller, self.drone_id))
+            data = self.get_location().update(
+                {"state": self.drone.system_status.state,
+                 "mode": self.drone.mode.name,
+                 "velocity": self.drone.velocity,
+                 "heading": self.drone.heading})
+            response = requests.post("%s/drones/%d/heartbeat" % (self.controller, self.drone_id), data=data)
         except Exception as e:
             print("uh oh, can't reach home. Keep flying for now...")
             self.time_without_network += 5
