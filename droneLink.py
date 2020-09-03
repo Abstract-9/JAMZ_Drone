@@ -1,6 +1,5 @@
 from dronekit import connect, VehicleMode, LocationGlobalRelative
 import time
-import asyncio
 import requests
 import math
 from command import Command
@@ -86,7 +85,7 @@ class DroneLink:
 
     def goto(self, coordinates):
         current_location = self.drone.location.global_relative_frame
-        target_location = LocationGlobalRelative(coordinates[0], coordinates[1], 50)
+        target_location = LocationGlobalRelative(coordinates[0], coordinates[1], 5)
         target_distance = get_distance_metres(current_location, target_location)
         self.drone.simple_goto(target_location, groundspeed=5)
 
@@ -160,7 +159,6 @@ class DroneLink:
                 self.commands.pop(0)
                 time.sleep(1)
 
-
     def __init__(self, device, drone_id, home):
         self.drone = connect(device)
         print("Drone connected!")
@@ -182,7 +180,6 @@ class DroneLink:
             self.home_location = self.drone.home_location
 
         print("Ready to go! Home location: %s" % self.home_location)
-
 
         @self.drone.on_message("HEARTBEAT")
         def on_heartbeat(drone, name, msg):

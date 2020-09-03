@@ -32,9 +32,9 @@ class Command:
             for name, item in Command.Commands.__members__.items():
                 if command['command'] == name:
                     if name == "GOTO":
-                        result.append(Command(item, command['lat'], command['lon']))
+                        result.append(Command(item, lat=command['lat'], lon=command['lon'], alt=command['alt']))
                     elif name == "ASCEND":
-                        result.append(Command(item, command['alt']))
+                        result.append(Command(item, alt=command['alt']))
                     else:
                         result.append(Command(item))
         return result
