@@ -1,4 +1,5 @@
 from dronekit import connect, VehicleMode, LocationGlobalRelative
+from pymavlink import mavutil
 import time
 import requests
 import math
@@ -13,19 +14,8 @@ class DroneLink:
     NETWORK_TIMEOUT = 120  # 120 seconds
     command_running = False
 
-    def get_status(self):
-        return {
-                "GPS": self.drone.gps_0,
-                "Battery": self.drone.battery,
-                "Last Heartbeat": self.drone.last_heartbeat,
-                "Armable": self.drone.is_armable,
-                "Status": self.drone.system_status.state,
-                "Mode": self.drone.mode,
-                "Altitude": self.drone.location.global_relative_frame.alt
-                }
-
-    def close_connection(self):
-        self.drone.close()
+    # CONTROL SECTION #
+    # This section contains methods for changing various states in the flight controller
 
     def arm(self):
         while not self.drone.is_armable:
@@ -43,25 +33,19 @@ class DroneLink:
         print("Armed!")
 
     def disarm(self):
-        self.drone.mode = VehicleMode("STABILIZE")
-        while not self.drone.mode.name == "STABILIZE":
-            print("Changing to STABILIZE...")
-            self.drone.mode = "STABILIZE"
-            time.sleep(1)
+        #self.drone.mode = VehicleMode("STABILIZE")
+        #while not self.drone.mode.name == "STABILIZE":
+        #    print("Changing to STABILIZE...")
+        #    self.drone.mode = "STABILIZE"
+        #    time.sleep(1)
         self.drone.armed = False
         while self.drone.armed:
             print("Disarming motors... Vehicle Mode: ")
             time.sleep(1)
         print("Disarmed!")
 
-    def get_home_location(self):
-        while not self.drone.home_location:
-            cmds = self.drone.commands
-            cmds.download()
-            cmds.wait_ready()
-            if not self.drone.home_location:
-                print("Waiting for home location...")
-        return self.drone.home_location
+    # FLIGHT SECTION #
+    # This section contains the methods for piloting the drone
 
     def take_off(self, altitude=5):
         # Can't take off without arming
@@ -72,10 +56,13 @@ class DroneLink:
 
         # Make sure takeoff happens
         self.drone.simple_takeoff(altitude)
-        while self.drone.location.global_relative_frame.alt < 1:
+        while self.drone.mode.name != "GUIDED":
+            print("Taking off | Vehicle mode: {}".format(self.drone.mode.name))
             self.drone.mode = VehicleMode("GUIDED")
             self.drone.simple_takeoff(altitude)
         while True:
+            print(" Altitude: ", self.drone.location.global_relative_frame.alt)
+            # Break and return from function
             print(" Altitude: ", self.drone.location.global_relative_frame.alt)
             # Break and return from function just below target altitude.
             if self.drone.location.global_relative_frame.alt >= altitude * 0.95:
@@ -85,9 +72,9 @@ class DroneLink:
 
     def goto(self, coordinates):
         current_location = self.drone.location.global_relative_frame
-        target_location = LocationGlobalRelative(coordinates[0], coordinates[1], 5)
+        target_location = LocationGlobalRelative(coordinates[0], coordinates[1], coordinates[2])
         target_distance = get_distance_metres(current_location, target_location)
-        self.drone.simple_goto(target_location, groundspeed=5)
+        self.drone.simple_goto(target_location, groundspeed=1)
 
         while self.drone.mode.name == "GUIDED":  # Stop action if we are no longer in guided mode.
             remaining_distance = get_distance_metres(self.drone.location.global_frame, target_location)
@@ -101,6 +88,7 @@ class DroneLink:
         self.drone.mode = VehicleMode("LAND")
         while self.drone.location.global_relative_frame.alt > 0.5:
             print("Landing...")
+            self.drone.mode = VehicleMode("LAND")
             time.sleep(1)
         print("Touchdown!")
 
@@ -113,12 +101,56 @@ class DroneLink:
             time.sleep(1)
         print("Returning home :)")
 
+    def set_yaw(self, heading, relative=False):
+        if relative:
+            is_relative = 1  # yaw relative to direction of travel
+        else:
+            is_relative = 0  # yaw is an absolute angle
+        # create the CONDITION_YAW command using command_long_encode()
+        msg = self.drone.message_factory.command_long_encode(
+            0, 0,  # target system, target component
+            mavutil.mavlink.MAV_CMD_CONDITION_YAW,  # command
+            0,  # confirmation
+            heading,  # param 1, yaw in degrees
+            0,  # param 2, yaw speed deg/s
+            1,  # param 3, direction -1 ccw, 1 cw
+            is_relative,  # param 4, relative offset 1, absolute angle 0
+            0, 0, 0)  # param 5 ~ 7 not used
+        # send command to vehicle
+        self.drone.send_mavlink(msg)
+
+    # INFORMATION SECTION #
+    # This section stores methods for accessing various information from the flight controller
+
+    def get_status(self):
+        return {
+                "GPS": self.drone.gps_0,
+                "Battery": self.drone.battery,
+                "Last Heartbeat": self.drone.last_heartbeat,
+                "Armable": self.drone.is_armable,
+                "Status": self.drone.system_status.state,
+                "Mode": self.drone.mode,
+                "Altitude": self.drone.location.global_relative_frame.alt
+                }
+
+    def get_home_location(self):
+        while not self.drone.home_location:
+            cmds = self.drone.commands
+            cmds.download()
+            cmds.wait_ready()
+            if not self.drone.home_location:
+                print("Waiting for home location...")
+        return self.drone.home_location
+
     def get_location(self):
         return {
             "lat": self.drone.location.global_relative_frame.lat,
             "lon": self.drone.location.global_relative_frame.lon,
             "alt": self.drone.location.global_relative_frame.alt
         }
+
+    # Utility section #
+    # This section contains various utility and I/O methods
 
     def send_heartbeat(self):
         try:
@@ -149,7 +181,7 @@ class DroneLink:
             while len(self.commands) > 0:
                 command = self.commands[0]
                 if command.command == Command.Commands.GOTO:
-                    self.goto([command.lat, command.lon])
+                    self.goto([command.lat, command.lon, command.alt])
                 elif command.command == Command.Commands.ASCEND:
                     self.take_off(command.alt)
                 elif command.command == Command.Commands.DESCEND:
@@ -159,6 +191,9 @@ class DroneLink:
                 self.commands.pop(0)
                 time.sleep(1)
 
+    def close_connection(self):
+        self.drone.close()
+
     def __init__(self, device, drone_id, home):
         self.drone = connect(device)
         print("Drone connected!")
@@ -166,6 +201,7 @@ class DroneLink:
         self.drone_id = drone_id
         self.controller = home
         self.commands = []
+        self.altitude = 0
         # Variables for controlling network timeout
         self.heartbeat_counter = 0
         self.time_without_network = 0
@@ -205,3 +241,19 @@ def get_distance_metres(location1, location2):
     dlat = location2.lat - location1.lat
     dlong = location2.lon - location1.lon
     return math.sqrt((dlat * dlat) + (dlong * dlong)) * 1.113195e5
+
+
+def get_bearing(location1, location2):
+    """
+    Returns the bearing between the two LocationGlobal objects passed as parameters.
+
+    This method is an approximation, and may not be accurate over large distances and close to the
+    earth's poles. It comes from the ArduPilot test code:
+    https://github.com/diydrones/ardupilot/blob/master/Tools/autotest/common.py
+    """
+    off_x = location2.lon - location1.lon
+    off_y = location2.lat - location1.lat
+    bearing = 90.00 + math.atan2(-off_y, off_x) * 57.2957795
+    if bearing < 0:
+        bearing += 360.00
+    return bearing

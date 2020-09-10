@@ -1,7 +1,6 @@
 from flask import Flask, request
 from argparse import ArgumentParser
 from droneLink import DroneLink
-from aiocoap import *
 
 import asyncio
 import requests
@@ -37,9 +36,14 @@ def app_factory(drone):
         asyncio.create_task(drone.land())
         return 200
 
+    @app.route('/test_arm', methods=['POST'])
+    def test_arm():
+        drone.arm()
+        return 200
+
     @app.route("/test_goto", methods=['POST'])
     def test_goto():
-        asyncio.create_task(drone.goto([float(request.form['lat']), float(request.form['lon'])]))
+        asyncio.create_task(drone.goto([float(request.form['lat']), float(request.form['lon']), float(request.form['alt'])]))
         return 200
 
     @app.route("/test_RTL", methods=['POST'])
@@ -65,10 +69,10 @@ def app_factory(drone):
 
 
 def initialize():
-    drone_id = call_home()
+    drone_id = 0  # call_home() // Testing
     while drone_id is None:
         time.sleep(5)
-        drone_id = call_home()
+        drone_id = 0  # call_home()
     drone = DroneLink(args.device, drone_id, args.home)
     print(drone.get_status())
     print("DRONE ID: %d" % drone_id)

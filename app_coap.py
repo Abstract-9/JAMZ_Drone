@@ -5,16 +5,14 @@ from aiocoap.numbers.codes import Code
 
 import aiocoap
 import asyncio
-import requests
 import time
 
 parser = ArgumentParser(description=__doc__)
 
 parser.add_argument("--device", required=True, help="mavlink device connection")
 parser.add_argument("--baudrate", type=int, help="master port baud rate", default=115200)
-parser.add_argument("--home", required=False, default="http://loganrodie.me:4000", help="Brain url")
+parser.add_argument("--home", required=False, default="coap://loganrodie.me", help="Brain url")
 args = parser.parse_args()
-
 
 
 class Location(resource.ObservableResource):

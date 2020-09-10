@@ -2,3 +2,4 @@ requests~=2.24.0
 Flask~=1.1.2
 dronekit~=2.9.2
 aiocoap~=0.3
+pymavlink~=2.4.9

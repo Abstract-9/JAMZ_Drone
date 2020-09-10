@@ -1,6 +1,7 @@
 from enum import Enum
 import json
 
+
 class Command:
 
     class Commands(Enum):
