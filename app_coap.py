@@ -7,12 +7,13 @@ import aiocoap
 import asyncio
 import requests
 import time
+import json
 
 parser = ArgumentParser(description=__doc__)
 
 parser.add_argument("--device", required=True, help="mavlink device connection")
 parser.add_argument("--baudrate", type=int, help="master port baud rate", default=115200)
-parser.add_argument("--home", required=False, default="http://loganrodie.me:4000", help="Brain url")
+parser.add_argument("--home", required=False, default="coap://loganrodie.me", help="Brain url")
 args = parser.parse_args()
 
 
@@ -41,7 +42,7 @@ class Location(resource.ObservableResource):
 
     async def render_get(self, request):
         location = self.drone.get_location()
-        payload = '{}|{}|{}'.format(location['lat'], location['lon'], location['alt'])
+        payload = json.dumps({'lat': location['lat'], 'lon': location['lon'], 'alt': location['alt']})
         return aiocoap.Message(payload=payload)
 
 
@@ -56,7 +57,7 @@ async def call_home(client):
         return None
     else:
         if response.code == Code.CREATED or response.code == Code.CHANGED:
-            return response.payload
+            return json.loads(response.payload)['id']
         else:
             return None
 
@@ -74,7 +75,7 @@ async def initialize():
     root.add_resource(['.well-known', 'core'], resource.WKCResource(root.get_resources_as_linkheader()))
     root.add_resource(['location'], Location(drone))
 
-    asyncio.Task(aiocoap.Context.create_server_context(root))
+    asyncio.Task(aiocoap.Context.create_server_context(root, bind=4445))
     asyncio.get_event_loop().run_forever()
 
 if __name__ == '__main__':
