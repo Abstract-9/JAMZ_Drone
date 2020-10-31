@@ -1,104 +1,163 @@
 from dronekit import connect, VehicleMode, LocationGlobalRelative
 from pymavlink import mavutil
-import time
+import asyncio
 import requests
 import math
 from command import Command
 
+from . import FlightStatus
+
 
 class DroneLink:
-    drone = None
+    # Create pre-defined flight status objects
+    STATUS_IDLE = FlightStatus(0)
+    STATUS_DONE_COMMAND = FlightStatus(1)
+    STATUS_EXECUTING_COMMAND = FlightStatus(2)
+    STATUS_LANDED = FlightStatus(3)
+
     # Define drone default altitude. It'll be much higher in prod
-    DEFAULT_ALTITUDE = 15
+    DEFAULT_ALTITUDE = 5
+    # Define drone ground speed in m/s.
+    GROUND_SPEED = 1
     # Define the amount of time that the drone can continue its mission without talking to the controller.
     NETWORK_TIMEOUT = 120  # 120 seconds
-    command_running = False
 
-    # CONTROL SECTION #
+    ################# CONTROL SECTION #################
     # This section contains methods for changing various states in the flight controller
 
-    def arm(self):
+    async def arm(self):
         while not self.drone.is_armable:
             print(" Waiting for vehicle to initialise...")
-            time.sleep(1)
+            await asyncio.sleep(1)
         self.drone.mode = VehicleMode("GUIDED")
         while not self.drone.mode.name == "GUIDED":
             print("Changing to GUIDED...")
             self.drone.mode = "GUIDED"
-            time.sleep(1)
+            await asyncio.sleep(1)
         self.drone.armed = True
         while not self.drone.armed:
             print("Arming motors... Vehicle Mode: ")
-            time.sleep(1)
+            await asyncio.sleep(1)
         print("Armed!")
 
-    def disarm(self):
-        #self.drone.mode = VehicleMode("STABILIZE")
-        #while not self.drone.mode.name == "STABILIZE":
-        #    print("Changing to STABILIZE...")
-        #    self.drone.mode = "STABILIZE"
-        #    time.sleep(1)
+    async def disarm(self):
         self.drone.armed = False
         while self.drone.armed:
             print("Disarming motors... Vehicle Mode: ")
-            time.sleep(1)
+            await asyncio.sleep(1)
         print("Disarmed!")
 
-    # FLIGHT SECTION #
+    # TODO I know, this is a weak design pattern. It'll be fixed in production.
+    async def set_mode(self, mode):
+        self.drone.mode = VehicleMode(mode)
+        while not self.drone.mode.name == mode:
+            print("Changing to {}...".format(mode))
+            self.drone.mode = mode
+            await asyncio.sleep(1)
+
+    ################# FLIGHT SECTION #################
     # This section contains the methods for piloting the drone
 
-    def take_off(self, altitude=5):
+    async def take_off(self, command):
+        self.status = self.STATUS_EXECUTING_COMMAND
+
         # Can't take off without arming
         if not self.drone.armed:
-            self.arm()
+            await self.arm()
         # Ready to go!
         print("Taking off!")
 
+        self.altitude = command.alt
         # Make sure takeoff happens
-        self.drone.simple_takeoff(altitude)
+        self.drone.simple_takeoff(command.alt)
         while self.drone.mode.name != "GUIDED":
             print("Taking off | Vehicle mode: {}".format(self.drone.mode.name))
             self.drone.mode = VehicleMode("GUIDED")
-            self.drone.simple_takeoff(altitude)
-        while True:
-            print(" Altitude: ", self.drone.location.global_relative_frame.alt)
-            # Break and return from function
-            print(" Altitude: ", self.drone.location.global_relative_frame.alt)
-            # Break and return from function just below target altitude.
-            if self.drone.location.global_relative_frame.alt >= altitude * 0.95:
-                print("Reached target altitude: Ready for mission")
-                break
-            time.sleep(1)
+            self.drone.simple_takeoff(command.alt)
+        command.wasExecuted = True
+        await self.ensure_takeoff()
+        # while True:
+        #     print(" Altitude: ", self.drone.location.global_relative_frame.alt)
+        #     # Break and return from function
+        #     print(" Altitude: ", self.drone.location.global_relative_frame.alt)
+        #     # Break and return from function just below target altitude.
+        #     if self.drone.location.global_relative_frame.alt >= command.alt * 0.95:
+        #         print("Reached target altitude: Ready for mission")
+        #         break
+        #     await asyncio.sleep(1)
 
-    def goto(self, coordinates):
+    async def ensure_takeoff(self):
+        def current_distance():
+            return self.altitude - self.drone.location.global_relative_frame.alt
+        check = current_distance()
+
+        await asyncio.sleep(0.25)
+        if current_distance() < check:
+            return current_distance()
+        elif current_distance() < 0.25: # Close enough, we're done. Goto will ensure flight altitude anyways
+            self.status = self.STATUS_DONE_COMMAND
+            return self.status
+        else:
+            self.drone.simple_takeoff(self.altitude)
+
+    async def goto(self, command):
+        self.status = self.STATUS_EXECUTING_COMMAND
+
+        self.target_location = LocationGlobalRelative(command.lat, command.lon, command.alt)
+        self.drone.simple_goto(self.target_location)
+
+        command.wasExecuted = True
+        await self.ensure_goto()
+        # while self.drone.mode.name == "GUIDED":  # Stop action if we are no longer in guided mode.
+        #     remaining_distance = get_distance_metres(self.drone.location.global_frame, target_location)
+        #     print("Distance to target: ", remaining_distance)
+        #     if remaining_distance <= target_distance * 0.01:  # Just below target, in case of undershoot.
+        #         print("Reached target")
+        #         break
+        #     time.sleep(2)
+
+    # Ensures that the drone continues to its destination.
+    async def ensure_goto(self):
         current_location = self.drone.location.global_relative_frame
-        target_location = LocationGlobalRelative(coordinates[0], coordinates[1], coordinates[2])
-        target_distance = get_distance_metres(current_location, target_location)
-        self.drone.simple_goto(target_location, groundspeed=1)
+        target_distance = get_distance_metres(current_location, self.target_location)
 
-        while self.drone.mode.name == "GUIDED":  # Stop action if we are no longer in guided mode.
-            remaining_distance = get_distance_metres(self.drone.location.global_frame, target_location)
-            print("Distance to target: ", remaining_distance)
-            if remaining_distance <= target_distance * 0.01:  # Just below target, in case of undershoot.
-                print("Reached target")
-                break
-            time.sleep(2)
+        await asyncio.sleep(0.25)
+        remaining_distance = get_distance_metres(self.drone.location.global_frame, self.target_location)
+        print("GOTO: Remaining Distance: {}".format(remaining_distance))
+        if remaining_distance < target_distance:  # If this is true, goto is working.
+            return remaining_distance
 
-    def land(self):
+        # We will need a better method of determining arrival, maybe combine airspeed check?
+        # TODO: Yes, lets do that. implement a vector transform to get absolute velocity.
+        elif remaining_distance < 0.75:
+            self.status = self.STATUS_DONE_COMMAND
+            return self.status
+
+        # Ensure goto
+        else:
+            self.drone.simple_goto(self.target_location)
+
+    async def land(self, command):
+        self.status = self.STATUS_EXECUTING_COMMAND
         self.drone.mode = VehicleMode("LAND")
-        while self.drone.location.global_relative_frame.alt > 0.5:
-            print("Landing...")
-            self.drone.mode = VehicleMode("LAND")
-            time.sleep(1)
-        print("Touchdown!")
+        command.wasExecuted = True
+        await self.ensure_land()
 
-    def return_home(self):
+    async def ensure_land(self):
+        if self.drone.mode.name == "LAND":
+            if self.drone.velocity[2] < 0.05:  # It's not moving, so we've landed
+                self.status = self.STATUS_DONE_COMMAND
+                return self.status
+        else:
+            self.drone.mode = VehicleMode("LAND")
+
+    async def return_home(self):
         self.drone.home_location = self.home_location
         self.drone.mode = VehicleMode("RTL")
         while not self.drone.mode.name == "RTL":
             print("Setting RTL mode...")
             self.drone.mode = VehicleMode("RTL")
-            time.sleep(1)
+            await asyncio.sleep(1)
         print("Returning home :)")
 
     def set_yaw(self, heading, relative=False):
@@ -119,7 +178,22 @@ class DroneLink:
         # send command to vehicle
         self.drone.send_mavlink(msg)
 
-    # INFORMATION SECTION #
+    # Command mapping. There's definitely a better way to do this.
+    async def execute_command(self, command):
+        # Command bindings
+        command_bindings = {
+            Command.GOTO: [self.goto, self.ensure_goto],
+            Command.ASCEND: [self.take_off, self.ensure_takeoff],
+            Command.DESCEND: [self.land, self.ensure_land],
+            Command.RTL: self.return_home
+        }
+
+        if not command.wasExecuted:
+            await command_bindings[command.command][0](command)
+        else:
+            await command_bindings[command.command][1]()
+
+    ################# INFORMATION SECTION #################
     # This section stores methods for accessing various information from the flight controller
 
     def get_status(self):
@@ -149,7 +223,7 @@ class DroneLink:
             "alt": self.drone.location.global_relative_frame.alt
         }
 
-    # Utility section #
+    ################# Utility section #################
     # This section contains various utility and I/O methods
 
     def send_heartbeat(self):
@@ -171,26 +245,6 @@ class DroneLink:
             # 505 means we need to change our ID. This should almost never happen
             self.drone_id = response.json()['id']
 
-    def receive_commands(self, commands):
-        self.commands.extend(Command.json_to_list(commands))
-        self.run_commands()
-
-    def run_commands(self):
-        if len(self.commands) != 0 and not self.command_running:
-            self.command_running = True
-            while len(self.commands) > 0:
-                command = self.commands[0]
-                if command.command == Command.Commands.GOTO:
-                    self.goto([command.lat, command.lon, command.alt])
-                elif command.command == Command.Commands.ASCEND:
-                    self.take_off(command.alt)
-                elif command.command == Command.Commands.DESCEND:
-                    self.land()
-                else:
-                    self.return_home()
-                self.commands.pop(0)
-                time.sleep(1)
-
     def close_connection(self):
         self.drone.close()
 
@@ -201,7 +255,6 @@ class DroneLink:
         self.drone_id = drone_id
         self.controller = home
         self.commands = []
-        self.altitude = 0
         # Variables for controlling network timeout
         self.heartbeat_counter = 0
         self.time_without_network = 0
@@ -211,24 +264,21 @@ class DroneLink:
         cmds.download()
         cmds.wait_ready()
 
+        # Setup initial flight params
+        self.drone.groundspeed = self.GROUND_SPEED
+
+        # Variables for controlling flight
+        self.altitude = 0
+        self.target_location = None
+        self.status = self.STATUS_IDLE
         self.home_location = self.drone.home_location
         while self.home_location is None:
             self.home_location = self.drone.home_location
 
         print("Ready to go! Home location: %s" % self.home_location)
 
-        @self.drone.on_message("HEARTBEAT")
-        def on_heartbeat(drone, name, msg):
-            print("LAT: %f" % drone.location.global_relative_frame.lat)
-            print("LNG: %f" % drone.location.global_relative_frame.lon)
-            print("ALT: %f" % drone.location.global_relative_frame.alt)
-            print("STATUS: %s | MODE: %s" % (drone.system_status.state, self.drone.mode))
-            print("AIRSPEED: %d" % drone.airspeed)
-            self.heartbeat_counter += 1
-            if self.heartbeat_counter == 5:
-                self.send_heartbeat()
-                self.heartbeat_counter = 0
 
+# The following is utility functions for various calculations
 
 def get_distance_metres(location1, location2):
     """
@@ -257,3 +307,4 @@ def get_bearing(location1, location2):
     if bearing < 0:
         bearing += 360.00
     return bearing
+

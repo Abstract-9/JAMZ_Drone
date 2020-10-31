@@ -3,23 +3,25 @@ import json
 
 
 class Command:
+    # Command Types
+    GOTO = "GOTO"
+    ASCEND = "ASCEND"
+    DESCEND = "DESCEND"
+    RTL = "RTL"
 
-    class Commands(Enum):
-        GOTO = 1
-        RTL = 2
-        ASCEND = 3
-        DESCEND = 4
+    # Command Status
+    wasExecuted = False
 
-    def __init__(self, command: Commands, lat=None, lon=None, alt=None):
+    def __init__(self, command, lat=None, lon=None, alt=None):
         self.command = command
-        if command == self.Commands.GOTO and lat is not None and lon is not None:
+        if command == self.GOTO and lat is not None and lon is not None:
             self.lat = lat
             self.lon = lon
-        elif command == self.Commands.ASCEND and alt is not None:
+        if alt is not None:
             self.alt = alt
 
     def to_dict(self):
-        if self.command != self.Commands.GOTO:
+        if self.command != self.GOTO:
             return {"command": self.command.name}
         else:
             return {"command": self.command.name,
@@ -30,12 +32,10 @@ class Command:
     def json_to_list(commands):
         result = []
         for command in commands:
-            for name, item in Command.Commands.__members__.items():
-                if command['command'] == name:
-                    if name == "GOTO":
-                        result.append(Command(item, lat=command['lat'], lon=command['lon'], alt=command['alt']))
-                    elif name == "ASCEND":
-                        result.append(Command(item, alt=command['alt']))
-                    else:
-                        result.append(Command(item))
+            if command['command'] == Command.GOTO:
+                result.append(Command(Command.GOTO, lat=float(command['lat']), lon=float(command['lon']), alt=float(command['alt'])))
+            elif command['command'] == Command.ASCEND:
+                result.append(Command(Command.ASCEND, alt=float(command['alt'])))
+            else:
+                result.append(Command(command['command']))
         return result

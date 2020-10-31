@@ -1,6 +1,6 @@
 from flask import Flask, request
 from argparse import ArgumentParser
-from droneLink import DroneLink
+from autopilot.droneLink import DroneLink
 
 import asyncio
 import requests
