@@ -2,11 +2,11 @@ from argparse import ArgumentParser
 
 from autopilot.droneLink import DroneLink
 
-import aiocoap.resource as resource
 from aiocoap.numbers.codes import Code
 from command import Command
 
 import aiocoap
+import serial
 import asyncio
 import time
 import json
@@ -18,6 +18,10 @@ parser.add_argument("--baudrate", type=int, help="master port baud rate", defaul
 parser.add_argument("--home", required=False, default="coap://loganrodie.me", help="Brain url")
 parser.add_argument("--interval", required=False, default=1, help="heartbeat interval in seconds. Defaults to 1.")
 args = parser.parse_args()
+
+# I don't like having this in the global context. I'll move this whole file to a class later.
+commands = []
+current_command = None
 
 
 async def init_home(client):
@@ -37,8 +41,8 @@ async def init_home(client):
 
 
 async def main_loop(client, drone):
-    commands = []
-    current_command = None
+    # I hate using globals, I'll probably move this to a class sooner than later
+    global current_command
     while True:
         status = await heartbeat(client, drone)
         if isinstance(status, aiocoap.Message):
@@ -59,9 +63,13 @@ async def main_loop(client, drone):
             else:
                 current_command = commands.pop(0)
                 asyncio.create_task(drone.execute_command(current_command))
+        # In this scenario, we ensure command execution
         elif drone.status == drone.STATUS_EXECUTING_COMMAND:
             if current_command:
                 asyncio.create_task(drone.execute_command(current_command))
+        # In this scenario, we handle obstacle avoidance
+        elif drone.status == drone.STATUS_OBSTACLE_INTERRUPTED:
+            asyncio.create_task(drone.reroute())
         await asyncio.sleep(1)
 
 
@@ -97,7 +105,21 @@ async def initialize():
     drone = DroneLink(args.device, drone_id, args.home)
     print(drone.get_status())
 
+    asyncio.create_task(sensor_loop(drone))
     await asyncio.create_task(main_loop(client, drone))
+
+
+async def sensor_loop(drone):
+    port = serial.Serial("/dev/ttyS0")
+    while True:
+        message = port.read_until(b"|")
+        obj = json.loads(message)
+        # TODO a bunch of stuff regarding sensors
+        print(message)
+        # Example
+        if 'detection_event' in obj:
+            await drone.on_detection()
+
 
 if __name__ == '__main__':
     asyncio.run(initialize())

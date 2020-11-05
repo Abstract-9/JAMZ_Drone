@@ -13,7 +13,10 @@ class DroneLink:
     STATUS_IDLE = FlightStatus(0)
     STATUS_DONE_COMMAND = FlightStatus(1)
     STATUS_EXECUTING_COMMAND = FlightStatus(2)
-    STATUS_LANDED = FlightStatus(3)
+    STATUS_OBSTACLE_INTERRUPTED = FlightStatus(3)
+
+    # Variables for handling obstacle avoidance
+    previous_command = None
 
     # Define drone default altitude. It'll be much higher in prod
     DEFAULT_ALTITUDE = 5
@@ -47,13 +50,26 @@ class DroneLink:
             await asyncio.sleep(1)
         print("Disarmed!")
 
-    # TODO I know, this is a weak design pattern. It'll be fixed in production.
-    async def set_mode(self, mode):
-        self.drone.mode = VehicleMode(mode)
-        while not self.drone.mode.name == mode:
-            print("Changing to {}...".format(mode))
-            self.drone.mode = mode
-            await asyncio.sleep(1)
+    ############### OBSTACLE AVOIDANCE ###############
+    # This section contains the methods for handling obstacle avoidance
+    # I'm sure this is going to be quite in-depth, so it'll probably have it's own file eventually
+
+    # This will be called upon a detection event. We will probably classify different events
+    # and act differently based on whats going on. Right now it's a basic example.
+    async def on_detection(self):
+        self.status = self.STATUS_OBSTACLE_INTERRUPTED
+
+        self.drone.mode = VehicleMode("LOITER")
+        while self.drone.mode.name != "LOITER":
+            self.drone.mode = VehicleMode("LOITER")
+            print("Flight controller isn't responding! Trying to loiter...")
+            await asyncio.sleep(0.5)
+
+    # This will be used to attempt to fly around an obstacle. It will definitely be very involved
+    # and require the output of the sensors, so I should make those values accessible.
+    async def reroute(self):
+        # Use this to try and do something to avoid
+        pass
 
     ################# FLIGHT SECTION #################
     # This section contains the methods for piloting the drone
