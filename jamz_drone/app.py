@@ -1,9 +1,9 @@
 from argparse import ArgumentParser
 
-from autopilot.droneLink import DroneLink
+from jamz_drone.autopilot.droneLink import DroneLink
 
 from aiocoap.numbers.codes import Code
-from command import Command
+from jamz_drone.command import Command
 
 import aiocoap
 import serial

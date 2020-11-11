@@ -3,7 +3,7 @@ from pymavlink import mavutil
 import asyncio
 import requests
 import math
-from command import Command
+from jamz_drone.command import Command
 
 from . import FlightStatus
 
