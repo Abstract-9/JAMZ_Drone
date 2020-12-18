@@ -3,3 +3,5 @@ Flask~=1.1.2
 dronekit~=2.9.2
 aiocoap~=0.3
 pymavlink~=2.4.9
+setuptools~=49.6.0
+pyserial~=3.4

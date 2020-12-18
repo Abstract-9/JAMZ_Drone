@@ -1,3 +1,9 @@
+# Environment Info
 venv/
 __pycache__/
 .idea/
+
+# Packaging by-products
+build/
+dist/
+jamz_drone_autopilot.egg-info/

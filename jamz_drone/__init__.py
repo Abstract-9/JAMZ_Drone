@@ -1,1 +1,1 @@
-from .app import initialize
+from .app import *

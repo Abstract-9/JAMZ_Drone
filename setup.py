@@ -12,7 +12,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/Abstract-9/JAMZ_Drone",
-    packages=setuptools.find_packages,
+    packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
         "Operating System :: OS Independent"
@@ -26,7 +26,7 @@ setuptools.setup(
     ],
     entry_points={
         'console_scripts': [
-            'jamz_autopilot = jamz_drone:initialize'
+            'jamz_autopilot = jamz_drone:run'
         ]
     },
     python_requires='>=3.6'
